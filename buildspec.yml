@@ -1,0 +1,45 @@
+version: 0.2
+
+# TODO Secret Manager를 통한 민감 설정 정보 분리
+env:
+  variables:
+    SPRING_PROFILE: ""
+    AWS_REGION : ""
+    AWS_ACCOUNT_ID : ""
+    ECR_REPOSITORY_NAME : ""
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY_NAME
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+  build:
+    commands:
+      - chmod +x ./gradlew
+      - echo unit testing ...
+      - ./gradlew test
+      - echo make jar ...
+      - ./gradlew assemble
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - docker build -f Dockerfile -t $REPOSITORY_URI:latest --build-arg JAR_FILE=build/libs/spring-app.jar .
+      # Image Tag 관리 : 최신 이미지(latest), 이전 버전(COMMIT_HASH)을 분리 하여 관리
+      - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker images...
+      - docker push $REPOSITORY_URI:latest
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+
+# S3 cache 영역에 등록할 대상 지정
+# build.gradle(pom.xml)에 명시되어 다운로드된 의존성 파일들을 S3 cache 영역에 등록
+# - gradle : '/root/.gradle/caches/**/*'
+# - maven : '/root/.m2/**/*'
+cache:
+  paths:
+    - '/root/.gradle/**/*'
