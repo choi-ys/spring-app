@@ -1,0 +1,20 @@
+{
+  "executionRoleArn": "arn:aws:iam::073987199387:role/ecsTaskExecutionRole",
+  "containerDefinitions": [{
+    "name": "container-spring-app",
+    "image": "073987199387.dkr.ecr.ap-northeast-2.amazonaws.com/spring-app:latest",
+    "essential": true,
+    "portMappings": [{
+      "hostPort": 8080,
+      "containerPort": 8080,
+      "protocol": "tcp"
+    }]
+  }],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "family": "task-spring-app"
+}

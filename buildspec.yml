@@ -5,27 +5,30 @@ phases:
       - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY_NAME
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
-      - echo "["`date +"%y-%m-%d %T"`"][pre_build] Logging in to Amazon ECR"
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][pre_build] Logging in to Amazon ECR"
       - aws --version
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
   build:
     commands:
-      - echo "["`date +"%y-%m-%d %T"`"][build] Execute unit test start"
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][build] Execute unit testing start"
       - chmod +x ./gradlew
       - ./gradlew test
-      - echo "["`date +"%y-%m-%d %T"`"][build] Gradle build satrt"
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][build] Gradle build satrt"
       - ./gradlew assemble
-      - echo "["`date +"%y-%m-%d %T"`"][build] Docker build start"
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][build] Docker build start"
       - docker build -f Dockerfile -t $REPOSITORY_URI:latest --build-arg JAR_FILE=build/libs/spring-app.jar .
       # Image Tag 관리 : 최신 이미지(latest), 이전 버전(COMMIT_HASH)을 분리 하여 관리
-      - echo "["`date +"%y-%m-%d %T"`"][build] Docker image tagging to [$REPOSITORY_URI:latest], [$REPOSITORY_URI:$IMAGE_TAG]"
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][build] Docker image tagging to [$REPOSITORY_URI:latest], [$REPOSITORY_URI:$IMAGE_TAG]"
       - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
   post_build:
     commands:
-      - echo "["`date +"%y-%m-%d %T"`"][post_build] Build completed"
-      - echo "["`date +"%y-%m-%d %T"`"][post_build] Pushing Docker image to ECR"
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][post_build] Build completed"
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][post_build] Pushing docker image to ECR"
       - docker push $REPOSITORY_URI:latest
       - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - echo "[CodeBuild]["`date +"%y-%m-%d %T"`"][post_build] Writing image definitions file"
+      - printf '[{"name":"%s","imageUri":"%s"}]' $ECR_REPOSITORY_NAME $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+      - cat imagedefinitions.json
 
 # S3 cache 영역에 등록할 대상 지정
 # build.gradle(pom.xml)에 명시되어 다운로드된 의존성 파일들을 S3 cache 영역에 등록
@@ -34,3 +37,11 @@ phases:
 cache:
   paths:
     - '/root/.gradle/**/*'
+
+# S3로 업로드할 대상 지정 (대상 파일은 .zip 형태로 압축되어 S3에 업로드)
+# AWS CodeBuild의 build 과정이 끝난 후, AWS CodeDeploy 수행에 필요한 설정 파일을 S3에 업로드
+artifacts:
+  files:
+    - imagedefinitions.json
+    - appspec.yml
+    - taskdef.json
